@@ -57,7 +57,7 @@ export default async function handler(req, res) {
             }
         }
 
-        // Route 4: Save or Update Student Profile Details
+        // Route 4: Save or Update Student Profile Details (Safeguards 'student_type')
         if (req.method === 'POST' && action === 'save_profile') {
             const { email, full_name, country, academic_rank, percentage, ielts_score, course_preference } = req.body;
 
@@ -66,9 +66,10 @@ export default async function handler(req, res) {
                 return res.status(400).json({ error: 'Email is required' });
             }
 
+            // Inserts as 'public' on first login. Updates fields on save, without resetting custom roles.
             await connection.execute(
-                `INSERT INTO students (email, full_name, country, academic_rank, percentage, ielts_score, course_preference) 
-                 VALUES (?, ?, ?, ?, ?, ?, ?) 
+                `INSERT INTO students (email, full_name, country, academic_rank, percentage, ielts_score, course_preference, student_type) 
+                 VALUES (?, ?, ?, ?, ?, ?, ?, 'public') 
                  ON DUPLICATE KEY UPDATE 
                     full_name = VALUES(full_name), 
                     country = VALUES(country), 
