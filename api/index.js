@@ -1,7 +1,6 @@
 const mysql = require('mysql2/promise');
 
 export default async function handler(req, res) {
-    // Enable CORS so Lovable can talk to Vercel
     res.setHeader('Access-Control-Allow-Credentials', true);
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
@@ -12,7 +11,6 @@ export default async function handler(req, res) {
     }
 
     try {
-        // Connects using your saved Vercel environment variables
         const connection = await mysql.createConnection({
             host: process.env.DB_HOST,
             user: process.env.DB_USER,
@@ -22,7 +20,7 @@ export default async function handler(req, res) {
 
         const { action } = req.query;
 
-        // Route 1: Fetch university data for Lovable search
+        // Route 1: Fetch university data
         if (action === 'get_universities') {
             const [rows] = await connection.execute('SELECT * FROM universities');
             await connection.end();
@@ -43,27 +41,49 @@ export default async function handler(req, res) {
         // Route 3: Toggle wishlist (Add or Remove heart)
         if (req.method === 'POST' && action === 'toggle_wishlist') {
             const { email, uni_id } = req.body;
-            
-            // Check if it already exists
             const [existing] = await connection.execute(
                 'SELECT id FROM wishlist WHERE student_email = ? AND uni_id = ?',
                 [email, uni_id]
             );
 
             if (existing.length > 0) {
-                // If it exists, remove it (unheart)
                 await connection.execute('DELETE FROM wishlist WHERE student_email = ? AND uni_id = ?', [email, uni_id]);
                 await connection.end();
                 return res.status(200).json({ status: 'removed' });
             } else {
-                // If it doesn't exist, add it (heart)
                 await connection.execute('INSERT INTO wishlist (student_email, uni_id) VALUES (?, ?)', [email, uni_id]);
                 await connection.end();
                 return res.status(200).json({ status: 'added' });
             }
         }
 
-        // Route 4: Handle Tawk.to Webhooks for 10-hour tracking
+        // Route 4: Save or Update Student Profile Details
+        if (req.method === 'POST' && action === 'save_profile') {
+            const { email, full_name, country, academic_rank, percentage, ielts_score, course_preference } = req.body;
+
+            if (!email) {
+                await connection.end();
+                return res.status(400).json({ error: 'Email is required' });
+            }
+
+            await connection.execute(
+                `INSERT INTO students (email, full_name, country, academic_rank, percentage, ielts_score, course_preference) 
+                 VALUES (?, ?, ?, ?, ?, ?, ?) 
+                 ON DUPLICATE KEY UPDATE 
+                    full_name = VALUES(full_name), 
+                    country = VALUES(country), 
+                    academic_rank = VALUES(academic_rank), 
+                    percentage = VALUES(percentage), 
+                    ielts_score = VALUES(ielts_score), 
+                    course_preference = VALUES(course_preference)`,
+                [email, full_name || null, country || null, academic_rank || null, percentage || null, ielts_score || null, course_preference || null]
+            );
+
+            await connection.end();
+            return res.status(200).json({ success: true, message: 'Profile saved successfully' });
+        }
+
+        // Route 5: Handle Tawk.to Webhooks
         if (req.method === 'POST' && action === 'webhook_chat') {
             const { event, chat } = req.body;
             const chatId = chat.id;
@@ -75,10 +95,7 @@ export default async function handler(req, res) {
                     [studentEmail, chatId]
                 );
             } else if (event === 'agent_reply') {
-                await connection.execute(
-                    'UPDATE chat_alerts SET status = "attended" WHERE chat_id = ?',
-                    [chatId]
-                );
+                await connection.execute('UPDATE chat_alerts SET status = "attended" WHERE chat_id = ?', [chatId]);
             }
             await connection.end();
             return res.status(200).json({ success: true });
