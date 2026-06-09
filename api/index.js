@@ -12,7 +12,7 @@ export default async function handler(req, res) {
     }
 
     try {
-        // Connects using variables we will set up in Vercel later
+        // Connects using your saved Vercel environment variables
         const connection = await mysql.createConnection({
             host: process.env.DB_HOST,
             user: process.env.DB_USER,
@@ -29,7 +29,41 @@ export default async function handler(req, res) {
             return res.status(200).json(rows);
         }
 
-        // Route 2: Handle Tawk.to Webhooks for 10-hour tracking
+        // Route 2: Get a student's wishlist
+        if (action === 'get_wishlist') {
+            const { email } = req.query;
+            const [rows] = await connection.execute(
+                'SELECT u.* FROM universities u JOIN wishlist w ON u.id = w.uni_id WHERE w.student_email = ?',
+                [email]
+            );
+            await connection.end();
+            return res.status(200).json(rows);
+        }
+
+        // Route 3: Toggle wishlist (Add or Remove heart)
+        if (req.method === 'POST' && action === 'toggle_wishlist') {
+            const { email, uni_id } = req.body;
+            
+            // Check if it already exists
+            const [existing] = await connection.execute(
+                'SELECT id FROM wishlist WHERE student_email = ? AND uni_id = ?',
+                [email, uni_id]
+            );
+
+            if (existing.length > 0) {
+                // If it exists, remove it (unheart)
+                await connection.execute('DELETE FROM wishlist WHERE student_email = ? AND uni_id = ?', [email, uni_id]);
+                await connection.end();
+                return res.status(200).json({ status: 'removed' });
+            } else {
+                // If it doesn't exist, add it (heart)
+                await connection.execute('INSERT INTO wishlist (student_email, uni_id) VALUES (?, ?)', [email, uni_id]);
+                await connection.end();
+                return res.status(200).json({ status: 'added' });
+            }
+        }
+
+        // Route 4: Handle Tawk.to Webhooks for 10-hour tracking
         if (req.method === 'POST' && action === 'webhook_chat') {
             const { event, chat } = req.body;
             const chatId = chat.id;
